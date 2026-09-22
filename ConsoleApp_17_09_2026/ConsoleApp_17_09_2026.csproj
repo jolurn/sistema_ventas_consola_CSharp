@@ -50,11 +50,13 @@
     <Compile Include="Enums\TipoMoneda.cs" />
     <Compile Include="Interfaces\IConvertibleDivisa.cs" />
     <Compile Include="Interfaces\IMetodoPago.cs" />
+    <Compile Include="Interfaces\IMetodoPagoFactory.cs" />
     <Compile Include="Interfaces\IValidable.cs" />
     <Compile Include="Modelos\Categoria.cs" />
     <Compile Include="Modelos\Producto.cs" />
     <Compile Include="Modelos\Sede.cs" />
     <Compile Include="Modelos\Usuario.cs" />
+    <Compile Include="Pagos\MetodoPagoFactory.cs" />
     <Compile Include="Pagos\PagoCripto.cs" />
     <Compile Include="Pagos\PagoTarjeta.cs" />
     <Compile Include="Pagos\PagoYape.cs" />

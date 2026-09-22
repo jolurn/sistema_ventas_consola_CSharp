@@ -16,10 +16,15 @@ namespace ConsoleApp_17_09_2026
     public class Program
     {
         // "Variables globales" para usar en todo el programa
+        // SRP: Program sigue siendo la entrada, pero delega responsabilidades a servicios/fábricas
         static List<Usuario> usuarios = new List<Usuario>();
         static List<Producto> productos = new List<Producto>();
         static List<Sede> sedes = new List<Sede>();
         static Usuario usuarioActual = null;
+
+        // DIP/OCP: Dependemos de abstracciones para crear métodos de pago y convertir divisas
+        static Interfaces.IMetodoPagoFactory pagoFactory = new Pagos.MetodoPagoFactory(); // OCP/DIP
+        static Interfaces.IConvertibleDivisa conversor = new Servicios.ConversorDivisas(); // DIP
 
         static void Main(string[] args)
         {
@@ -343,7 +348,8 @@ namespace ConsoleApp_17_09_2026
                     break;
             }
 
-            IConvertibleDivisa conv = new ConversorDivisas();
+            // DIP: usar la abstracción IConvertibleDivisa creada en el campo 'conversor'
+            IConvertibleDivisa conv = conversor;
             decimal resultado = conv.Convertir(monto, TipoMoneda.PEN, destino);
             decimal comision = conv.CalcularComision(resultado, destino);
 
@@ -561,16 +567,13 @@ namespace ConsoleApp_17_09_2026
 
             string opcionPago = Console.ReadLine();
 
-            IMetodoPago metodoPago;
-            switch (opcionPago)
+            // OCP/DIP: Delegar la creación del método de pago a la fábrica
+            IMetodoPago metodoPago = pagoFactory.CrearMetodoPago(opcionPago);
+            if (metodoPago == null)
             {
-                case "1": metodoPago = new PagoYape(); break;
-                case "2": metodoPago = new PagoTarjeta(); break;
-                case "3": metodoPago = new PagoCripto(); break;
-                default:
-                    Console.WriteLine("[ERROR] Método de pago inválido. ENTER para volver...");
-                    Console.ReadLine();
-                    return;
+                Console.WriteLine("[ERROR] Método de pago inválido. ENTER para volver...");
+                Console.ReadLine();
+                return;
             }
 
             // ------------------------------------------------------------
