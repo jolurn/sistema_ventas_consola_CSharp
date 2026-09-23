@@ -26,10 +26,22 @@ namespace ConsoleApp_17_09_2026
         static Interfaces.IMetodoPagoFactory pagoFactory = new Pagos.MetodoPagoFactory(); // OCP/DIP
         static Interfaces.IConvertibleDivisa conversor = new Servicios.ConversorDivisas(); // DIP
 
+        // OCP/DIP: fábrica de categorías
+        static Interfaces.ICategoriaFactory categoriaFactory = new Categorias.CategoriaFactory();
+
+        // OCP/DIP: selector de moneda para conversión de divisas
+        static Interfaces.ISelectorMoneda selectorMoneda = new Servicios.SelectorMoneda();
+
         static void Main(string[] args)
         {
             // Datos precargados para no empezar vacío
             usuarios.Add(new Usuario("jorge", "123", RolUsuario.Admin));
+
+            // OCP en acción: registrar PEN para conversiones
+            selectorMoneda.Registrar(1, TipoMoneda.PEN);
+
+            // 👇 OCP EN ACCIÓN: agregar Plin SIN modificar MetodoPagoFactory
+            pagoFactory.Registrar("4", () => new PagoPlin());
 
             bool salir = false;
             while (!salir)
@@ -175,7 +187,7 @@ namespace ConsoleApp_17_09_2026
             }
         }
 
-        // ============ PRODUCTOS ============
+        // ============ REGISTRAR PRODUCTOS ============
         static void RegistrarProducto()
         {
             Console.Clear();
@@ -192,21 +204,14 @@ namespace ConsoleApp_17_09_2026
             Console.Write("Elige: ");
             string cat = Console.ReadLine();
 
-            Categoria categoria;
-            switch (cat)
+            // 👇 OCP/DIP: usamos la fábrica en vez del switch
+            Categoria categoria = categoriaFactory.CrearCategoria(cat);
+
+            if (categoria == null)
             {
-                case "1":
-                    categoria = new CategoriaTecnologia();
-                    break;
-                case "2":
-                    categoria = new CategoriaRopa();
-                    break;
-                case "3":
-                    categoria = new CategoriaAlimento();
-                    break;
-                default:
-                    categoria = new CategoriaTecnologia();
-                    break;
+                Console.WriteLine("[ERROR] Categoría inválida. ENTER para volver...");
+                Console.ReadLine();
+                return;
             }
 
             productos.Add(new Producto(nombre, precio, categoria));
@@ -322,65 +327,81 @@ namespace ConsoleApp_17_09_2026
         {
             Console.Clear();
             Console.WriteLine("--- CONVERSIÓN DE DIVISAS ---");
-            Console.Write("Monto en soles (PEN): ");
-            decimal monto = decimal.Parse(Console.ReadLine());
 
-            Console.WriteLine("Convertir a: 1=USD, 2=EUR, 3=BTC, 4=ETH");
-            int op = int.Parse(Console.ReadLine());
+            // ------------------------------------------------------------
+            // 1. ELEGIR MONEDA DE ORIGEN
+            // ------------------------------------------------------------
+            Console.WriteLine("\n--- MONEDA DE ORIGEN ---");
+            Console.WriteLine("1. PEN (Soles)");
+            Console.WriteLine("2. USD (Dólares)");
+            Console.WriteLine("3. EUR (Euros)");
+            Console.WriteLine("4. BTC (Bitcoin)");
+            Console.WriteLine("5. ETH (Ethereum)");
+            Console.Write("Elige origen: ");
 
-            TipoMoneda destino;
-            switch (op)
+            int opOrigen;
+            if (!int.TryParse(Console.ReadLine(), out opOrigen) || opOrigen < 1 || opOrigen > 5)
             {
-                case 1:
-                    destino = TipoMoneda.USD;
-                    break;
-                case 2:
-                    destino = TipoMoneda.EUR;
-                    break;
-                case 3:
-                    destino = TipoMoneda.BTC;
-                    break;
-                case 4:
-                    destino = TipoMoneda.ETH;
-                    break;
-                default:
-                    destino = TipoMoneda.USD;
-                    break;
-            }
-
-            // DIP: usar la abstracción IConvertibleDivisa creada en el campo 'conversor'
-            IConvertibleDivisa conv = conversor;
-            decimal resultado = conv.Convertir(monto, TipoMoneda.PEN, destino);
-            decimal comision = conv.CalcularComision(resultado, destino);
-
-            Console.WriteLine($"Resultado: {resultado:F4} {destino}");
-            Console.WriteLine($"Comisión: {comision:F4}");
-            Console.WriteLine("ENTER para volver...");
-            Console.ReadLine();
-        }
-
-        // ============ PAGO YAPE ============
-        static void PagarConYape()
-        {
-            Console.Clear();
-            Console.WriteLine("--- PAGO CON YAPE ---");
-            if (productos.Count == 0)
-            {
-                Console.WriteLine("No hay productos para pagar.");
+                Console.WriteLine("[ERROR] Opción inválida. ENTER para volver...");
                 Console.ReadLine();
                 return;
             }
 
-            Console.WriteLine("Productos disponibles:");
-            for (int i = 0; i < productos.Count; i++)
-                // 👇 CAMBIO: usamos FormatoSoles
-                Console.WriteLine($"{i + 1}. {productos[i].Nombre} - {FormatoSoles(productos[i].PrecioConImpuesto())}");
+            TipoMoneda origen = selectorMoneda.Seleccionar(opOrigen);
 
-            Console.Write("Elige producto: ");
-            int p = int.Parse(Console.ReadLine()) - 1;
+            // ------------------------------------------------------------
+            // 2. INGRESAR MONTO
+            // ------------------------------------------------------------
+            Console.Write($"\nMonto en {origen}: ");
+            decimal monto;
+            if (!decimal.TryParse(Console.ReadLine(), out monto) || monto <= 0)
+            {
+                Console.WriteLine("[ERROR] Monto inválido. ENTER para volver...");
+                Console.ReadLine();
+                return;
+            }
 
-            IMetodoPago pago = new PagoYape();
-            pago.Pagar(productos[p].PrecioConImpuesto());
+            // ------------------------------------------------------------
+            // 3. ELEGIR MONEDA DE DESTINO
+            // ------------------------------------------------------------
+            Console.WriteLine("\n--- MONEDA DE DESTINO ---");
+            Console.WriteLine("1. PEN (Soles)");
+            Console.WriteLine("2. USD (Dólares)");
+            Console.WriteLine("3. EUR (Euros)");
+            Console.WriteLine("4. BTC (Bitcoin)");
+            Console.WriteLine("5. ETH (Ethereum)");
+            Console.Write("Elige destino: ");
+
+            int opDestino;
+            if (!int.TryParse(Console.ReadLine(), out opDestino) || opDestino < 1 || opDestino > 5)
+            {
+                Console.WriteLine("[ERROR] Opción inválida. ENTER para volver...");
+                Console.ReadLine();
+                return;
+            }
+
+            TipoMoneda destino = selectorMoneda.Seleccionar(opDestino);
+
+            // Validar que origen y destino sean distintos
+            if (origen == destino)
+            {
+                Console.WriteLine("[AVISO] Origen y destino son la misma moneda. No hay nada que convertir.");
+                Console.ReadLine();
+                return;
+            }
+
+            // ------------------------------------------------------------
+            // 4. CONVERTIR Y MOSTRAR RESULTADO
+            // ------------------------------------------------------------
+            IConvertibleDivisa conv = conversor;
+            decimal resultado = conv.Convertir(monto, origen, destino);
+            decimal comision = conv.CalcularComision(resultado, destino);
+
+            Console.WriteLine();
+            Console.WriteLine("========== RESULTADO ==========");
+            Console.WriteLine($"{FormatearMoneda(monto, origen)} = {FormatearMoneda(resultado, destino)}");
+            Console.WriteLine($"Comisión: {FormatearMoneda(comision, destino)}");
+            Console.WriteLine("===============================");
             Console.ReadLine();
         }
 
@@ -563,6 +584,7 @@ namespace ConsoleApp_17_09_2026
             Console.WriteLine("1. Yape");
             Console.WriteLine("2. Tarjeta");
             Console.WriteLine("3. Cripto");
+            Console.WriteLine("4. Plin");    // 👈 nueva opción
             Console.Write("Elige: ");
 
             string opcionPago = Console.ReadLine();
@@ -603,6 +625,18 @@ namespace ConsoleApp_17_09_2026
         static string FormatoSoles(decimal monto)
         {
             return $"S/ {monto:F2}";
+        }
+
+        // Formatea un monto según el tipo de moneda
+        static string FormatearMoneda(decimal monto, TipoMoneda moneda)
+        {
+            if (moneda == TipoMoneda.PEN)
+                return $"S/ {monto:F2}";
+
+            if (moneda == TipoMoneda.BTC || moneda == TipoMoneda.ETH)
+                return $"{monto:F8} {moneda}";
+
+            return $"{monto:F2} {moneda}";
         }
 
     }
