@@ -19,7 +19,7 @@ Selecciona la opción 1 para ingresar al sistema.
 Elige opción:
 ```
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/1.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/1.png"  width="500"/>
 </p>
 
 ## 🧭 Ingresa tu Usuario y Clave.
@@ -27,7 +27,7 @@ Elige opción:
 Si las credenciales son correctas, verás un mensaje de bienvenida indicando tu rol (ej. Bienvenido jorge (Admin)).
 
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/2.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/2.png" width="500"/>
 </p>
 
 ```text
@@ -59,7 +59,7 @@ Instrucción: Selecciona la opción 1, ingresa el nombre de la sede (ej. Los Oli
 Resultado: [OK] Sede registrada.
 ```
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/4.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/4.png"  width="500"/>
 </p>
 
 ```text
@@ -80,7 +80,7 @@ Resultado: [OK] Usuario registrado.
 ```
 
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/6.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/6.png"  width="500"/>
 </p>
 
 ```text
@@ -101,7 +101,7 @@ Nota: Incluye un módulo de benchmarking (LINQ) que muestra tiempos de ejecució
 ```
 
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/8.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/8.png"  width="500"/>
 </p>
 
 ```text
@@ -119,7 +119,7 @@ Resultado: [OK] Producto registrado.
 ```
 
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/10.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/10.png"  width="500"/>
 </p>
 
 ```text
@@ -130,7 +130,7 @@ Instrucción: Selecciona la opción 5. El sistema preguntará si deseas generar 
 ```
 
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/13.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/13.png"  width="500"/>
 </p>
 
 ```text
@@ -149,7 +149,7 @@ Resultado: El sistema muestra el monto convertido y la comisión aplicada (ej. S
 ```
 
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/15.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/15.png"  width="500"/>
 </p>
 
 ```text
@@ -172,7 +172,7 @@ Resultado: [OK] Venta registrada con [Método]. [INFO] Stock restante en [Sede]:
 ```
 
 <p align="center">
-  <img src="ConsoleApp_17_09_2026/img/17.png" height="200"/>
+  <img src="ConsoleApp_17_09_2026/img/17.png"  width="500"/>
 </p>
 
 ```text
