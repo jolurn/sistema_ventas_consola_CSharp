@@ -8,6 +8,7 @@ using ConsoleApp_17_09_2026.Validaciones;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -21,6 +22,10 @@ namespace ConsoleApp_17_09_2026
         static List<Producto> productos = new List<Producto>();
         static List<Sede> sedes = new List<Sede>();
         static Usuario usuarioActual = null;
+
+        // Variables globales: const y readonly de ejemplo
+        const string APP_NAME = "SistemaVentasConsola"; // const inmutable en tiempo de compilación
+        static readonly DateTime START_TIME = DateTime.UtcNow; // readonly en tiempo de ejecución
 
         // DIP/OCP: Dependemos de abstracciones para crear métodos de pago y convertir divisas
         static Interfaces.IMetodoPagoFactory pagoFactory = new Pagos.MetodoPagoFactory(); // OCP/DIP
@@ -43,27 +48,14 @@ namespace ConsoleApp_17_09_2026
             // 👇 OCP EN ACCIÓN: agregar Plin SIN modificar MetodoPagoFactory
             pagoFactory.Registrar("4", () => new PagoPlin());
 
-            bool salir = false;
-            while (!salir)
-            {
-                Console.Clear();
-                Console.WriteLine("=== SISTEMA DE VENTAS ===");
-                Console.WriteLine("1. Login");
-                Console.WriteLine("2. Salir");
-                Console.Write("Elige opción: ");
+            // Crear repositorios usando las listas globales como backing store
+            var usuarioRepo = new Repos.UsuarioRepository(usuarios);
+            var productoRepo = new Repos.ProductoRepository(productos);
+            var sedeRepo = new Repos.SedeRepository(sedes);
 
-                string opcion = Console.ReadLine();
-
-                switch (opcion)
-                {
-                    case "1": Login(); break;
-                    case "2": salir = true; break;
-                    default:
-                        Console.WriteLine("[ERROR] Opción inválida. ENTER...");
-                        Console.ReadLine();
-                        break;
-                }
-            }
+            // Crear UIManager y delegar todo el menú en la clase (Main solo ejecución)
+            var ui = new UI.UIManager(usuarioRepo, productoRepo, sedeRepo);
+            ui.Run();
         }
 
         // ============ LOGIN ============
@@ -91,7 +83,7 @@ namespace ConsoleApp_17_09_2026
         }
 
         // ============ REGISTRAR USUARIO ============
-        static void RegistrarUsuario()
+        public static void RegistrarUsuario()
         {
             Console.Clear();
             Console.WriteLine("--- REGISTRAR USUARIO ---");
@@ -188,7 +180,7 @@ namespace ConsoleApp_17_09_2026
         }
 
         // ============ REGISTRAR PRODUCTOS ============
-        static void RegistrarProducto()
+        public static void RegistrarProducto()
         {
             Console.Clear();
             Console.WriteLine("--- REGISTRAR PRODUCTO ---");
@@ -234,45 +226,148 @@ namespace ConsoleApp_17_09_2026
 
             return totalStock;
         }
-        static void VerProductos()
+
+        // Genera 'cantidad' productos y los añade a la lista 'productos'
+        static void GenerarProductos(int cantidad)
+        {
+            var nombres = new string[]
+            {
+                "Leche","Pan","Queso","Arroz","Huevos","Pollo","Manzana","Banana","Camiseta","Pantalon",
+                "Zapatos","Laptop","Mouse","Teclado","Auriculares","Jugo","Cereal","Aceite","Azucar","Sal"
+            };
+
+            var alimentos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Leche","Pan","Queso","Arroz","Huevos","Pollo","Manzana","Banana","Jugo","Cereal","Aceite","Azucar","Sal"
+            };
+
+            var ropaSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Camiseta","Pantalon","Zapatos"
+            };
+
+            var tecnologiaSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Laptop","Mouse","Teclado","Auriculares"
+            };
+
+            var rnd = new Random(42);
+            // Si ya hay productos, empezamos después del último índice para nombres únicos
+            int start = productos.Count + 1;
+
+            for (int i = start; i < start + cantidad; i++)
+            {
+                string baseNombre = nombres[(i - 1) % nombres.Length];
+                string nombre = baseNombre + (i > nombres.Length ? i.ToString() : "");
+
+                Categoria cat;
+                if (alimentos.Contains(baseNombre)) cat = new Categorias.CategoriaAlimento();
+                else if (ropaSet.Contains(baseNombre)) cat = new Categorias.CategoriaRopa();
+                else if (tecnologiaSet.Contains(baseNombre)) cat = new Categorias.CategoriaTecnologia();
+                else cat = new Categorias.CategoriaAlimento();
+
+                decimal precio = (decimal)(rnd.NextDouble() * 500.0 + 1.0);
+                productos.Add(new Producto(nombre, Math.Round(precio, 2), cat));
+            }
+        }
+
+        // Mide en ms la ejecución de una acción (GC previo para mayor consistencia)
+        static long MedirMs(Action accion)
+        {
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            var sw = Stopwatch.StartNew();
+            accion();
+            sw.Stop();
+            return sw.ElapsedMilliseconds;
+        }
+
+        // Ejecuta un conjunto de pruebas LINQ sobre 'productos' y muestra tiempos
+        static void EjecutarPruebasLINQ(int cantidad)
+        {
+            Console.Clear();
+            Console.WriteLine($"Generando {cantidad} productos para pruebas LINQ...");
+            productos.Clear();
+            GenerarProductos(cantidad);
+
+            Console.WriteLine("Ejecutando pruebas (se muestran ms) ...\n");
+
+            // WHERE
+            long msWhereSeq = MedirMs(() => { var c = productos.Where(p => p.Precio > 100m).Count(); });
+            long msWherePar = MedirMs(() => { var c = productos.AsParallel().Where(p => p.Precio > 100m).Count(); });
+            Console.WriteLine($"WHERE  -> Seq: {msWhereSeq} ms | PLINQ: {msWherePar} ms");
+
+            // SELECT
+            long msSelectSeq = MedirMs(() => { var list = productos.Select(p => p.Nombre).ToList(); });
+            long msSelectPar = MedirMs(() => { var list = productos.AsParallel().Select(p => p.Nombre).ToList(); });
+            Console.WriteLine($"SELECT -> Seq: {msSelectSeq} ms | PLINQ: {msSelectPar} ms");
+
+            // ORDERBY + Take(100)
+            long msOrderSeq = MedirMs(() => { var top = productos.OrderBy(p => p.Precio).Take(100).ToList(); });
+            long msOrderPar = MedirMs(() => { var top = productos.AsParallel().OrderBy(p => p.Precio).Take(100).ToList(); });
+            Console.WriteLine($"ORDERBY (Take100) -> Seq: {msOrderSeq} ms | PLINQ: {msOrderPar} ms");
+
+            // GROUPBY vs ToLookup
+            long msGroupSeq = MedirMs(() => { var g = productos.GroupBy(p => p.Categoria.Nombre).Select(gp => new { Key = gp.Key, C = gp.Count() }).ToList(); });
+            long msLookup = MedirMs(() => { var lu = productos.ToLookup(p => p.Categoria.Nombre); var x = lu["Alimento"].Count(); });
+            Console.WriteLine($"GROUPBY -> Seq: {msGroupSeq} ms | ToLookup: {msLookup} ms");
+
+            Console.WriteLine("\nMuestra primeros 20 productos generados:");
+            foreach (var p in productos.Take(20))
+                Console.WriteLine($"{p.Nombre} - {p.Categoria.Nombre} - S/ {p.Precio:F2}");
+
+            Console.WriteLine("\nENTER para volver...");
+            Console.ReadLine();
+        }
+        public static void VerProductos()
         {
             Console.Clear();
             Console.WriteLine("--- PRODUCTOS ---");
+            // No se generan productos automáticamente aquí.
+            // La generación masiva solo ocurre si el usuario lo solicita explícitamente
+            // mediante la opción de pruebas LINQ dentro de este mismo método.
 
-            if (productos.Count == 0)
+            // Preguntar si se desea generar muchos registros para probar LINQ
+            Console.Write("\n¿Deseas generar muchos registros para probar LINQ? (s/N): ");
+            var resp = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(resp) && resp.Trim().ToLower().StartsWith("s"))
             {
-                Console.WriteLine("No hay productos registrados.");
-            }
-            else
-            {
-                for (int i = 0; i < productos.Count; i++)
+                Console.Write("Cantidad de registros a generar (ej: 100000): ");
+                if (int.TryParse(Console.ReadLine(), out int cant) && cant > 0)
                 {
-                    var p = productos[i];
-
-                    // Línea principal del producto
-                    Console.WriteLine($"{i + 1}. {p.Nombre} | Precio: {FormatoSoles(p.Precio)} | " +
-                                      $"Categoría: {p.Categoria.Nombre} | Con impuesto: {FormatoSoles(p.PrecioConImpuesto())} | " +
-                                      $"Stock total: {StockTotalProducto(p)}");
-
-                    // Desglose por sede
-                    if (sedes.Count > 0)
-                    {
-                        foreach (Sede sede in sedes)
-                        {
-                            int stockSede = 0;
-                            if (sede.Stock.ContainsKey(p))
-                                stockSede = sede.Stock[p];
-
-                            Console.WriteLine($"   -> {sede.Nombre}: {stockSede}");
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine("   -> (No hay sedes registradas)");
-                    }
-
-                    Console.WriteLine(); // línea en blanco entre productos
+                    EjecutarPruebasLINQ(cant);
                 }
+            }
+
+            Console.WriteLine("\n--- FIN EJEMPLOS LINQ ---\n");
+
+            // ---------------------- LISTADO DETALLADO (existente) ----------------------
+            for (int i = 0; i < productos.Count; i++)
+            {
+                var p = productos[i];
+
+                // Línea principal del producto
+                Console.WriteLine($"{i + 1}. {p.Nombre} | Precio: {FormatoSoles(p.Precio)} | " +
+                                  $"Categoría: {p.Categoria.Nombre} | Con impuesto: {FormatoSoles(p.PrecioConImpuesto())} | " +
+                                  $"Stock total: {StockTotalProducto(p)}");
+
+                // Desglose por sede
+                if (sedes.Count > 0)
+                {
+                    foreach (Sede sede in sedes)
+                    {
+                        int stockSede = 0;
+                        if (sede.Stock.ContainsKey(p))
+                            stockSede = sede.Stock[p];
+
+                        Console.WriteLine($"   -> {sede.Nombre}: {stockSede}");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("   -> (No hay sedes registradas)");
+                }
+
+                Console.WriteLine(); // línea en blanco entre productos
             }
 
             Console.WriteLine("ENTER para volver...");
@@ -280,50 +375,65 @@ namespace ConsoleApp_17_09_2026
         }
 
         // ============ SEDES ============
-        static void RegistrarSede()
+        public static void RegistrarSede()
         {
-            Console.Clear();
-            Console.WriteLine("--- REGISTRAR SEDE ---");
-            Console.Write("Nombre de la sede: ");
-            string nombre = Console.ReadLine();
-            sedes.Add(new Sede(nombre));
-            Console.WriteLine("[OK] Sede registrada. ENTER...");
-            Console.ReadLine();
+            try
+            {
+                Console.Clear();
+                Console.WriteLine("--- REGISTRAR SEDE ---");
+                Console.Write("Nombre de la sede: ");
+                string nombre = Console.ReadLine();
+                sedes.Add(new Sede(nombre));
+                Console.WriteLine("[OK] Sede registrada. ENTER...");
+                Console.ReadLine();
+            }
+            catch (Exception ex)
+            {
+                // Manejo centralizado: envolver en RepositoryException
+                throw new Repos.RepositoryException("Error registrando sede", ex);
+            }
         }
 
-        static void AgregarStock()
+        public static void AgregarStock()
         {
-            Console.Clear();
-            if (sedes.Count == 0 || productos.Count == 0)
+            try
             {
-                Console.WriteLine("Primero registra al menos una sede y un producto.");
+                Console.Clear();
+                if (sedes.Count == 0 || productos.Count == 0)
+                {
+                    Console.WriteLine("Primero registra al menos una sede y un producto.");
+                    Console.ReadLine();
+                    return;
+                }
+
+                Console.WriteLine("--- AGREGAR STOCK ---");
+                Console.WriteLine("Sedes:");
+                for (int i = 0; i < sedes.Count; i++)
+                    Console.WriteLine($"{i + 1}. {sedes[i].Nombre}");
+                Console.Write("Elige sede: ");
+                int s = int.Parse(Console.ReadLine()) - 1;
+
+                Console.WriteLine("Productos:");
+                for (int i = 0; i < productos.Count; i++)
+                    Console.WriteLine($"{i + 1}. {productos[i].Nombre}");
+                Console.Write("Elige producto: ");
+                int p = int.Parse(Console.ReadLine()) - 1;
+
+                Console.Write("Cantidad a agregar: ");
+                int cant = int.Parse(Console.ReadLine());
+
+                sedes[s].AgregarStock(productos[p], cant);
+                Console.WriteLine("[OK] Stock actualizado. ENTER...");
                 Console.ReadLine();
-                return;
             }
-
-            Console.WriteLine("--- AGREGAR STOCK ---");
-            Console.WriteLine("Sedes:");
-            for (int i = 0; i < sedes.Count; i++)
-                Console.WriteLine($"{i + 1}. {sedes[i].Nombre}");
-            Console.Write("Elige sede: ");
-            int s = int.Parse(Console.ReadLine()) - 1;
-
-            Console.WriteLine("Productos:");
-            for (int i = 0; i < productos.Count; i++)
-                Console.WriteLine($"{i + 1}. {productos[i].Nombre}");
-            Console.Write("Elige producto: ");
-            int p = int.Parse(Console.ReadLine()) - 1;
-
-            Console.Write("Cantidad a agregar: ");
-            int cant = int.Parse(Console.ReadLine());
-
-            sedes[s].AgregarStock(productos[p], cant);
-            Console.WriteLine("[OK] Stock actualizado. ENTER...");
-            Console.ReadLine();
+            catch (Exception ex)
+            {
+                throw new Repos.RepositoryException("Error agregando stock", ex);
+            }
         }
 
         // ============ DIVISAS ============
-        static void ConvertirDivisas()
+        public static void ConvertirDivisas()
         {
             Console.Clear();
             Console.WriteLine("--- CONVERSIÓN DE DIVISAS ---");
@@ -406,7 +516,7 @@ namespace ConsoleApp_17_09_2026
         }
 
         // Método auxiliar: muestra mensaje de acceso denegado
-        static void AccesoDenegado()
+        public static void AccesoDenegado()
         {
             Console.WriteLine("[ERROR] No tienes permisos para esta opción.");
             Console.WriteLine("Presiona ENTER para volver...");
@@ -414,212 +524,207 @@ namespace ConsoleApp_17_09_2026
         }
 
         // ============ REGISTRAR VENTA ============
-        static void RegistrarVenta()
+        public static void RegistrarVenta()
         {
-            Console.Clear();
-            Console.WriteLine("--- REGISTRAR VENTA ---");
-
-            // Validaciones previas
-            if (sedes.Count == 0)
+            try
             {
-                Console.WriteLine("[AVISO] No hay sedes registradas.");
-                Console.WriteLine("Presiona ENTER para volver...");
-                Console.ReadLine();
-                return;
-            }
+                Console.Clear();
+                Console.WriteLine("--- REGISTRAR VENTA ---");
 
-            if (productos.Count == 0)
-            {
-                Console.WriteLine("[AVISO] No hay productos registrados.");
-                Console.WriteLine("Presiona ENTER para volver...");
-                Console.ReadLine();
-                return;
-            }
+                // Validaciones previas
+                if (sedes.Count == 0)
+                {
+                    Console.WriteLine("[AVISO] No hay sedes registradas.");
+                    Console.WriteLine("Presiona ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            // ------------------------------------------------------------
-            // 1. ELEGIR SEDE  👈 NUEVO
-            // ------------------------------------------------------------
-            Console.WriteLine("\n--- SELECCIONA LA SEDE ---");
-            for (int i = 0; i < sedes.Count; i++)
-            {
-                Console.WriteLine($"{i + 1}. {sedes[i].Nombre}");
-            }
+                if (productos.Count == 0)
+                {
+                    Console.WriteLine("[AVISO] No hay productos registrados.");
+                    Console.WriteLine("Presiona ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            Console.Write("\nElige sede: ");
-            int numeroSede;
-            if (!int.TryParse(Console.ReadLine(), out numeroSede) ||
-                numeroSede < 1 || numeroSede > sedes.Count)
-            {
-                Console.WriteLine("[ERROR] Sede inválida. ENTER para volver...");
-                Console.ReadLine();
-                return;
-            }
+                // ------------------------------------------------------------
+                // 1. ELEGIR SEDE
+                // ------------------------------------------------------------
+                Console.WriteLine("\n--- SELECCIONA LA SEDE ---");
+                for (int i = 0; i < sedes.Count; i++)
+                    Console.WriteLine($"{i + 1}. {sedes[i].Nombre}");
 
-            Sede sedeElegida = sedes[numeroSede - 1];
+                Console.Write("\nElige sede: ");
+                if (!int.TryParse(Console.ReadLine(), out int numeroSede) ||
+                    numeroSede < 1 || numeroSede > sedes.Count)
+                {
+                    Console.WriteLine("[ERROR] Sede inválida. ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            // ------------------------------------------------------------
-            // 2. MOSTRAR PRODUCTOS CON STOCK DE ESA SEDE  👈 MODIFICADO
-            // ------------------------------------------------------------
-            Console.WriteLine($"\n--- PRODUCTOS EN {sedeElegida.Nombre.ToUpper()} ---");
-            for (int i = 0; i < productos.Count; i++)
-            {
-                int stockEnSede = 0;
-                if (sedeElegida.Stock.ContainsKey(productos[i]))
-                    stockEnSede = sedeElegida.Stock[productos[i]];
+                Sede sedeElegida = sedes[numeroSede - 1];
 
-                Console.WriteLine($"{i + 1}. {productos[i].Nombre} - {FormatoSoles(productos[i].PrecioConImpuesto())} | Stock: {stockEnSede}");
-            }
+                // ------------------------------------------------------------
+                // 2. MOSTRAR PRODUCTOS CON STOCK DE ESA SEDE
+                // ------------------------------------------------------------
+                Console.WriteLine($"\n--- PRODUCTOS EN {sedeElegida.Nombre.ToUpper()} ---");
+                for (int i = 0; i < productos.Count; i++)
+                {
+                    int stockEnSede = sedeElegida.Stock.ContainsKey(productos[i]) ? sedeElegida.Stock[productos[i]] : 0;
+                    Console.WriteLine($"{i + 1}. {productos[i].Nombre} - {ConsoleApp_17_09_2026.Util.Formatos.FormatoSoles(productos[i].PrecioConImpuesto())} | Stock: {stockEnSede}");
+                }
 
-            Console.Write("\nElige producto: ");
-            int numeroProducto;
-            if (!int.TryParse(Console.ReadLine(), out numeroProducto) ||
-                numeroProducto < 1 || numeroProducto > productos.Count)
-            {
-                Console.WriteLine("[ERROR] Producto inválido. ENTER para volver...");
-                Console.ReadLine();
-                return;
-            }
+                Console.Write("\nElige producto: ");
+                if (!int.TryParse(Console.ReadLine(), out int numeroProducto) ||
+                    numeroProducto < 1 || numeroProducto > productos.Count)
+                {
+                    Console.WriteLine("[ERROR] Producto inválido. ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            Producto productoElegido = productos[numeroProducto - 1];
+                Producto productoElegido = productos[numeroProducto - 1];
 
-            // ------------------------------------------------------------
-            // 3. VERIFICAR STOCK EN LA SEDE
-            // ------------------------------------------------------------
-            int stockDisponible = 0;
-            if (sedeElegida.Stock.ContainsKey(productoElegido))
-                stockDisponible = sedeElegida.Stock[productoElegido];
+                // ------------------------------------------------------------
+                // 3. VERIFICAR STOCK EN LA SEDE
+                // ------------------------------------------------------------
+                int stockDisponible = sedeElegida.Stock.ContainsKey(productoElegido) ? sedeElegida.Stock[productoElegido] : 0;
+                if (stockDisponible == 0)
+                {
+                    Console.WriteLine($"[ERROR] No hay stock de '{productoElegido.Nombre}' en la sede {sedeElegida.Nombre}.");
+                    Console.WriteLine("Presiona ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            if (stockDisponible == 0)
-            {
-                Console.WriteLine($"[ERROR] No hay stock de '{productoElegido.Nombre}' en la sede {sedeElegida.Nombre}.");
-                Console.WriteLine("Presiona ENTER para volver...");
-                Console.ReadLine();
-                return;
-            }
+                // ------------------------------------------------------------
+                // 4. ELEGIR CANTIDAD
+                // ------------------------------------------------------------
+                Console.Write($"Cantidad (stock en {sedeElegida.Nombre}: {stockDisponible}): ");
+                if (!int.TryParse(Console.ReadLine(), out int cantidad) || cantidad <= 0)
+                {
+                    Console.WriteLine("[ERROR] Cantidad inválida. ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            // ------------------------------------------------------------
-            // 4. ELEGIR CANTIDAD
-            // ------------------------------------------------------------
-            Console.Write($"Cantidad (stock en {sedeElegida.Nombre}: {stockDisponible}): ");
-            int cantidad;
-            if (!int.TryParse(Console.ReadLine(), out cantidad) || cantidad <= 0)
-            {
-                Console.WriteLine("[ERROR] Cantidad inválida. ENTER para volver...");
-                Console.ReadLine();
-                return;
-            }
+                if (cantidad > stockDisponible)
+                {
+                    Console.WriteLine($"[ERROR] Stock insuficiente. Solo hay {stockDisponible} unidades en {sedeElegida.Nombre}.");
+                    Console.WriteLine("Presiona ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            if (cantidad > stockDisponible)
-            {
-                Console.WriteLine($"[ERROR] Stock insuficiente. Solo hay {stockDisponible} unidades en {sedeElegida.Nombre}.");
-                Console.WriteLine("Presiona ENTER para volver...");
-                Console.ReadLine();
-                return;
-            }
-
-            // ------------------------------------------------------------
-            // 5. DETERMINAR CLIENTE
-            // ------------------------------------------------------------
-            Usuario clienteVenta;
-
-            if (usuarioActual.Rol == RolUsuario.Cliente)
-            {
-                clienteVenta = usuarioActual;
-                Console.WriteLine($"\nCliente: {clienteVenta.Nombre} (tú mismo)");
-            }
-            else
-            {
+                // ------------------------------------------------------------
+                // 5. DETERMINAR CLIENTE (siempre preguntar: incluye Consumidor Final)
+                // ------------------------------------------------------------
                 List<Usuario> clientes = usuarios.FindAll(u => u.Rol == RolUsuario.Cliente);
 
+                Console.WriteLine();
+                Console.WriteLine("--- CLIENTE DE LA VENTA ---");
+                Console.WriteLine("0. Consumidor Final");
                 if (clientes.Count == 0)
                 {
-                    Console.WriteLine("\n[AVISO] No hay clientes registrados. Se usará 'Consumidor Final'.");
-                    clienteVenta = new Usuario("Consumidor Final", "-", RolUsuario.Cliente);
+                    Console.WriteLine("(No hay clientes registrados)");
                 }
                 else
                 {
-                    Console.WriteLine("\n--- CLIENTES ---");
                     for (int i = 0; i < clientes.Count; i++)
-                    {
                         Console.WriteLine($"{i + 1}. {clientes[i].Nombre}");
-                    }
+                }
 
-                    Console.Write("Elige cliente: ");
-                    int numCliente;
-                    if (!int.TryParse(Console.ReadLine(), out numCliente) ||
-                        numCliente < 1 || numCliente > clientes.Count)
-                    {
-                        Console.WriteLine("[ERROR] Cliente inválido. ENTER para volver...");
-                        Console.ReadLine();
-                        return;
-                    }
+                Console.Write("Elige cliente (número): ");
+                if (!int.TryParse(Console.ReadLine(), out int numCliente))
+                {
+                    Console.WriteLine("[ERROR] Entrada inválida. ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
+                Usuario clienteVenta;
+                if (numCliente == 0)
+                {
+                    clienteVenta = new Usuario("Consumidor Final", "-", RolUsuario.Cliente);
+                }
+                else if (numCliente >= 1 && numCliente <= clientes.Count)
+                {
                     clienteVenta = clientes[numCliente - 1];
                 }
-            }
+                else
+                {
+                    Console.WriteLine("[ERROR] Cliente inválido. ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            // ------------------------------------------------------------
-            // 6. CALCULAR TOTAL
-            // ------------------------------------------------------------
-            decimal precioUnitario = productoElegido.PrecioConImpuesto();
-            decimal total = precioUnitario * cantidad;
+                // ------------------------------------------------------------
+                // 6. CALCULAR TOTAL
+                // ------------------------------------------------------------
+                decimal precioUnitario = productoElegido.PrecioConImpuesto();
+                decimal total = precioUnitario * cantidad;
 
-            Console.WriteLine();
-            Console.WriteLine("========== RESUMEN ==========");
-            Console.WriteLine($"Sede: {sedeElegida.Nombre}");
-            Console.WriteLine($"Cliente: {clienteVenta.Nombre}");
-            Console.WriteLine($"Vendedor: {usuarioActual.Nombre}");
-            Console.WriteLine($"Producto: {productoElegido.Nombre}");
-            Console.WriteLine($"Categoría: {productoElegido.Categoria.Nombre}");
-            Console.WriteLine($"Precio unitario: {FormatoSoles(precioUnitario)}");
-            Console.WriteLine($"Cantidad: {cantidad}");
-            Console.WriteLine($"Total a pagar: {FormatoSoles(total)}");
-            Console.WriteLine("=============================");
+                Console.WriteLine();
+                Console.WriteLine("========== RESUMEN ==========");
+                Console.WriteLine($"Sede: {sedeElegida.Nombre}");
+                Console.WriteLine($"Cliente: {clienteVenta.Nombre}");
+                Console.WriteLine($"Vendedor: {(usuarioActual == null ? "(no identificado)" : usuarioActual.Nombre)}");
+                Console.WriteLine($"Producto: {productoElegido.Nombre}");
+                Console.WriteLine($"Categoría: {productoElegido.Categoria.Nombre}");
+                Console.WriteLine($"Precio unitario: {ConsoleApp_17_09_2026.Util.Formatos.FormatoSoles(precioUnitario)}");
+                Console.WriteLine($"Cantidad: {cantidad}");
+                Console.WriteLine($"Total a pagar: {ConsoleApp_17_09_2026.Util.Formatos.FormatoSoles(total)}");
+                Console.WriteLine("=============================");
 
-            // ------------------------------------------------------------
-            // 7. ELEGIR MÉTODO DE PAGO
-            // ------------------------------------------------------------
-            Console.WriteLine();
-            Console.WriteLine("--- MÉTODO DE PAGO ---");
-            Console.WriteLine("1. Yape");
-            Console.WriteLine("2. Tarjeta");
-            Console.WriteLine("3. Cripto");
-            Console.WriteLine("4. Plin");    // 👈 nueva opción
-            Console.Write("Elige: ");
+                // ------------------------------------------------------------
+                // 7. ELEGIR MÉTODO DE PAGO
+                // ------------------------------------------------------------
+                Console.WriteLine();
+                Console.WriteLine("--- MÉTODO DE PAGO ---");
+                Console.WriteLine("1. Yape");
+                Console.WriteLine("2. Tarjeta");
+                Console.WriteLine("3. Cripto");
+                Console.WriteLine("4. Plin");
+                Console.Write("Elige: ");
 
-            string opcionPago = Console.ReadLine();
+                string opcionPago = Console.ReadLine();
+                IMetodoPago metodoPago = pagoFactory.CrearMetodoPago(opcionPago);
+                if (metodoPago == null)
+                {
+                    Console.WriteLine("[ERROR] Método de pago inválido. ENTER para volver...");
+                    Console.ReadLine();
+                    return;
+                }
 
-            // OCP/DIP: Delegar la creación del método de pago a la fábrica
-            IMetodoPago metodoPago = pagoFactory.CrearMetodoPago(opcionPago);
-            if (metodoPago == null)
-            {
-                Console.WriteLine("[ERROR] Método de pago inválido. ENTER para volver...");
+                // ------------------------------------------------------------
+                // 8. COBRAR Y DESCONTAR STOCK
+                // ------------------------------------------------------------
+                Console.WriteLine();
+                bool exito = metodoPago.Pagar(total);
+
+                if (exito)
+                {
+                    sedeElegida.ReducirStock(productoElegido, cantidad);
+                    int restante = sedeElegida.Stock.ContainsKey(productoElegido) ? sedeElegida.Stock[productoElegido] : 0;
+                    Console.WriteLine($"[OK] Venta registrada con {metodoPago.Nombre}.");
+                    Console.WriteLine($"[INFO] Stock restante en {sedeElegida.Nombre}: {restante}");
+                }
+                else
+                {
+                    Console.WriteLine($"[ERROR] El pago con {metodoPago.Nombre} no se pudo completar.");
+                }
+
+                Console.WriteLine("Presiona ENTER para volver...");
                 Console.ReadLine();
-                return;
             }
-
-            // ------------------------------------------------------------
-            // 8. COBRAR Y DESCONTAR STOCK  👈 MODIFICADO
-            // ------------------------------------------------------------
-            Console.WriteLine();
-            bool exito = metodoPago.Pagar(total);
-
-            if (exito)
+            catch (Exception ex)
             {
-                // Descontar de la sede elegida
-                sedeElegida.ReducirStock(productoElegido, cantidad);
-
-                Console.WriteLine($"[OK] Venta registrada con {metodoPago.Nombre}.");
-                Console.WriteLine($"[INFO] Stock restante en {sedeElegida.Nombre}: {sedeElegida.Stock[productoElegido]}");
+                throw new Repos.RepositoryException("Error registrando venta", ex);
             }
-            else
-            {
-                Console.WriteLine($"[ERROR] El pago con {metodoPago.Nombre} no se pudo completar.");
-            }
-
-            Console.WriteLine("Presiona ENTER para volver...");
-            Console.ReadLine();
         }
+
 
         // ============ MÉTODO AUXILIAR DE FORMATO ============        
         static string FormatoSoles(decimal monto)
